@@ -1,0 +1,47 @@
+Instructions.txt
+
+Lab – P2P and Socket Programming
+
+Objective:
+This lab aims to provide you with hands-on experience in designing and implementing a distributed peer-to-peer (P2P) chat application using socket programming. You will learn about P2P communication, message routing, and the challenges of building real-time applications in a decentralized environment.
+Lab Description:
+
+You will develop a chat application where users can connect directly to each other (or through a small number of relay nodes) without relying on a central server. This decentralized approach requires careful consideration of message routing, user presence, and network dynamics. This is a ground project, each group has at most 2 people.
+Specific Requirements:
+1.	Communication Protocol: Use TCP sockets for communication between peers. Design a simple, efficient protocol for exchanging messages, including chat messages, user presence information (online/offline), and control messages (e.g., connection requests, disconnections). Consider using a structured data format like JSON or Protocol Buffers for message serialization.
+2.	Peer Discovery: Implement a mechanism for peers to discover and connect to each other. You can choose one of the following approaches (or propose a well-reasoned alternative):
+o	Direct Connection (Simplest): Users know each other's IP addresses and ports and connect directly. This is suitable for small, controlled networks.
+o	 (Advanced - Extra Credit) Distributed Hash Table (DHT): Implement a simplified DHT to manage peer information and facilitate discovery in a fully decentralized manner.
+3.	Message Routing: Implement a message routing mechanism. If using direct connections, messages are sent directly to the intended recipient. If using a DHT, the DHT will be used to locate the recipient peer.
+4.	User Presence: Implement a mechanism for users to indicate their online/offline status. This information should be propagated throughout the network so that other users can see who is available to chat with.
+5.	Chat Functionality: Users should be able to send text messages to other users. The application should display incoming messages in a user-friendly format, including the sender's username.
+6.	User Interface: Create a simple command-line interface (CLI) for users to interact with the chat application. The CLI should support commands for connecting to other users, sending messages, displaying user presence, and disconnecting.
+7.	Concurrency: The application must be able to handle concurrent connections and messages. Use appropriate synchronization mechanisms (e.g., threads, mutexes) to prevent race conditions and ensure data consistency.
+
+
+Report Requirements:
+Your report should include the following sections:
+1.	Introduction: Briefly describe the problem and the goals of the lab.
+2.	Architecture: Describe the architecture of your distributed chat application. Explain your choice of peer discovery and message routing mechanisms. Include diagrams illustrating the system components and their interactions.
+3.	Implementation: Describe the implementation details, including the communication protocol, data structures used, concurrency handling, and user interface design.
+4.	Testing: Describe your testing methodology and the results of your tests. Include test cases that cover various scenarios, such as multiple users connecting and chatting, handling disconnections, and message delivery.
+5.	Discussion: Discuss the challenges you faced during the lab and how you overcame them. Analyze the performance and scalability of your application. Discuss potential improvements and future work.
+6.	Conclusion: Summarize your findings and contributions.
+7.	Code: Include your well-commented source code as an appendix.
+
+Grading Rubric:
+•	Functionality (50%): Correctness of the implementation, including peer discovery, message routing, user presence, chat functionality, and concurrency handling.
+•	Design (25%): Clarity and efficiency of the architecture and implementation. Appropriate choice of peer discovery and message routing mechanisms.
+•	Report (25%): Completeness, clarity, and organization of the report.
+
+Extra Credit:
+•	Implement a more sophisticated user interface (e.g., using a GUI).
+•	Implement features like group chat or file transfer.
+•	Implement robust error handling and fault tolerance.
+
+Tools and Technologies:
+•	Programming Language: Python, C++, Node.js, or Java (or any other language you feel good)
+•	Libraries: Socket libraries for your chosen language
+
+
+

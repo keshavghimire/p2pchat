@@ -1,8 +1,22 @@
 # chat.py
+import sys
 import tkinter as tk
-from tkinter import Tk, Label, Entry, Button, Text, Frame, Scrollbar, PhotoImage, messagebox
+from tkinter import (
+    Tk,
+    Label,
+    Entry,
+    Button,
+    Text,
+    Frame,
+    Scrollbar,
+    PhotoImage,
+    messagebox,
+)
 import threading
+from tkinter import filedialog
 from p2p_chat import P2PChat
+import file_transfer
+
 
 class ChatUI:
     def __init__(self, root):
@@ -14,20 +28,28 @@ class ChatUI:
         self.username = ""
         self.chat_display = None
         self.setup_welcome_screen()
+        self.file_transfer = file_transfer.FileTransfer(
+            message_sender=self._send_message_to_peer, downloads_folder="downloads"
+        )
 
     def setup_welcome_screen(self):
         for widget in self.root.winfo_children():
             widget.destroy()
 
-        welcome_label = tk.Label(self.root, text="Welcome to P2P Chat", font=("Helvetica", 24, 'bold'), pady=20)
+        welcome_label = tk.Label(
+            self.root,
+            text="Welcome to P2P Chat",
+            font=("Helvetica", 24, "bold"),
+            pady=20,
+        )
         welcome_label.pack()
 
         intro_text = tk.Label(
-            self.root, 
-            text="Connect directly with friends using peer-to-peer technology. No servers, no tracking, just private communication.", 
-            font=("Helvetica", 12), 
-            wraplength=300, 
-            justify="center"
+            self.root,
+            text="Connect directly with friends using peer-to-peer technology. No servers, no tracking, just private communication.",
+            font=("Helvetica", 12),
+            wraplength=300,
+            justify="center",
         )
         intro_text.pack(pady=10)
 
@@ -42,7 +64,9 @@ class ChatUI:
             placeholder = Label(self.root, text="[Chat Icon]", font=("Helvetica", 18))
             placeholder.pack(pady=20)
 
-        username_label = tk.Label(self.root, text="Please enter your username:", font=("Helvetica", 14))
+        username_label = tk.Label(
+            self.root, text="Please enter your username:", font=("Helvetica", 14)
+        )
         username_label.pack(pady=10)
 
         self.username_entry = tk.Entry(self.root, font=("Helvetica", 14))
@@ -52,51 +76,62 @@ class ChatUI:
         button_frame.pack(pady=20)
 
         create_button = tk.Button(
-            button_frame, 
-            text="Create Chat", 
-            font=("Helvetica", 14), 
-            bg="#2196F3", 
-            fg="white", 
-            relief="flat", 
-            command=self.on_create_chat
+            button_frame,
+            text="Create Chat",
+            font=("Helvetica", 14),
+            bg="#2196F3",
+            fg="white",
+            relief="flat",
+            command=self.on_create_chat,
         )
         create_button.pack(pady=10, ipady=5, ipadx=10)
 
         join_button = tk.Button(
-            button_frame, 
-            text="  Join Chat  ", 
-            font=("Helvetica", 14), 
-            bg="white", 
-            fg="#2196F3", 
-            relief="flat", 
-            command=self.show_join_screen
+            button_frame,
+            text="  Join Chat  ",
+            font=("Helvetica", 14),
+            bg="white",
+            fg="#2196F3",
+            relief="flat",
+            command=self.show_join_screen,
         )
         join_button.pack(pady=10, ipady=5, ipadx=10)
-        join_button.config(highlightthickness=2, highlightbackground="#2196F3", highlightcolor="#2196F3")
+        join_button.config(
+            highlightthickness=2,
+            highlightbackground="#2196F3",
+            highlightcolor="#2196F3",
+        )
 
     def on_create_chat(self):
         username = self.username_entry.get().strip()
         if not username:
             messagebox.showerror("Error", "Please enter a username")
             return
-        
+
         self.username = username
         self.setup_chat_screen()
         self.chat_instance = P2PChat(username, ui_callback=self.update_chat_display)
         self.update_chat_display(f"You are connected as {self.username}.")
-        self.update_chat_display(f"Your chat is running on port {self.chat_instance.port}.")
+        self.update_chat_display(
+            f"Your chat is running on port {self.chat_instance.port}."
+        )
 
     def show_join_screen(self):
         username = self.username_entry.get().strip()
         if not username:
             messagebox.showerror("Error", "Please enter a username")
             return
-        
+
         self.username = username
         for widget in self.root.winfo_children():
             widget.destroy()
 
-        join_label = tk.Label(self.root, text="Join Existing Chat", font=("Helvetica", 20, 'bold'), pady=20)
+        join_label = tk.Label(
+            self.root,
+            text="Join Existing Chat",
+            font=("Helvetica", 20, "bold"),
+            pady=20,
+        )
         join_label.pack()
 
         host_label = tk.Label(self.root, text="Host address:", font=("Helvetica", 14))
@@ -116,38 +151,46 @@ class ChatUI:
         button_frame.pack(pady=20)
 
         join_button = tk.Button(
-            button_frame, 
-            text="Connect", 
-            font=("Helvetica", 14), 
-            bg="#2196F3", 
-            fg="white", 
-            relief="flat", 
-            command=self.on_join_chat
+            button_frame,
+            text="Connect",
+            font=("Helvetica", 14),
+            bg="#2196F3",
+            fg="white",
+            relief="flat",
+            command=self.on_join_chat,
         )
         join_button.pack(side=tk.LEFT, padx=10, ipady=5, ipadx=10)
 
         back_button = tk.Button(
-            button_frame, 
-            text="Back", 
-            font=("Helvetica", 14), 
-            bg="white", 
-            fg="#2196F3", 
-            relief="flat", 
-            command=self.setup_welcome_screen
+            button_frame,
+            text="Back",
+            font=("Helvetica", 14),
+            bg="white",
+            fg="#2196F3",
+            relief="flat",
+            command=self.setup_welcome_screen,
         )
         back_button.pack(side=tk.LEFT, padx=10, ipady=5, ipadx=10)
-        back_button.config(highlightthickness=2, highlightbackground="#2196F3", highlightcolor="#2196F3")
+        back_button.config(
+            highlightthickness=2,
+            highlightbackground="#2196F3",
+            highlightcolor="#2196F3",
+        )
 
     def on_join_chat(self):
         try:
             host = self.host_entry.get().strip()
             port = int(self.port_entry.get().strip())
             self.setup_chat_screen()
-            self.chat_instance = P2PChat(self.username, ui_callback=self.update_chat_display)
+            self.chat_instance = P2PChat(
+                self.username, ui_callback=self.update_chat_display
+            )
             success = self.chat_instance.join_network(host, port)
             if success:
                 self.update_chat_display(f"You are connected as {self.username}.")
-                self.update_chat_display(f"Your chat is running on port {self.chat_instance.port}.")
+                self.update_chat_display(
+                    f"Your chat is running on port {self.chat_instance.port}."
+                )
                 self.update_chat_display(f"Successfully connected to {host}:{port}")
             else:
                 messagebox.showerror("Error", f"Failed to connect to {host}:{port}")
@@ -164,23 +207,23 @@ class ChatUI:
         header_frame.pack(fill=tk.X)
 
         username_label = Label(
-            header_frame, 
-            text=f"Username: {self.username}", 
-            font=("Helvetica", 12), 
-            bg="#2196F3", 
-            fg="white", 
-            pady=10
+            header_frame,
+            text=f"Username: {self.username}",
+            font=("Helvetica", 12),
+            bg="#2196F3",
+            fg="white",
+            pady=10,
         )
         username_label.pack(side=tk.LEFT, padx=10)
 
         peers_button = Button(
-            header_frame, 
-            text="Peers", 
-            font=("Helvetica", 12), 
-            bg="#0d47a1", 
-            fg="white", 
-            relief="flat", 
-            command=self.show_peers
+            header_frame,
+            text="Peers",
+            font=("Helvetica", 12),
+            bg="#0d47a1",
+            fg="white",
+            relief="flat",
+            command=self.show_peers,
         )
         peers_button.pack(side=tk.RIGHT, padx=10, pady=5)
 
@@ -204,30 +247,47 @@ class ChatUI:
         self.message_entry.bind("<Return>", self.send_message)
 
         send_button = Button(
-            input_frame, 
-            text="Send", 
-            font=("Helvetica", 12), 
-            bg="#2196F3", 
-            fg="white", 
-            relief="flat", 
-            command=self.send_message
+            input_frame,
+            text="Send",
+            font=("Helvetica", 12),
+            bg="#2196F3",
+            fg="white",
+            relief="flat",
+            command=self.send_message,
         )
-        send_button.pack(side=tk.RIGHT, padx=10)
+        send_button.pack(side=tk.LEFT, padx=10)
+
+        send_file_button = Button(
+            input_frame,
+            text="Send File",
+            font=("Helvetica", 12),
+            bg="#2196F3",
+            fg="white",
+            relief="flat",
+            command=self.select_file,  # Calls the new method below
+        )
+        send_file_button.pack(side=tk.RIGHT, padx=5)
 
     def send_message(self, event=None):
         message = self.message_entry.get().strip()
         if message:
-            if message.lower() == '/quit':
+            if message.lower() == "/quit":
                 self.on_closing()
                 return
-            
+
             self.update_chat_display(f"{self.username}: {message}")
             if self.chat_instance:
                 self.chat_instance.broadcast_message(message)
             self.message_entry.delete(0, tk.END)
 
+    def select_file(self):
+        # Placeholder method to select a file from the local system
+        file_path = filedialog.askopenfilename()
+        if file_path:
+            print(f"Selected file: {file_path}")
+
     def update_chat_display(self, message):
-        if not hasattr(self, 'chat_display') or self.chat_display is None:
+        if not hasattr(self, "chat_display") or self.chat_display is None:
             print(f"Can't display message yet: {message}")
             return
 
@@ -244,16 +304,31 @@ class ChatUI:
                 # Determine alignment and styling based on the username
                 if username == "System":
                     # Center-align system messages and use 80% of the screen width
-                    self.chat_display.tag_configure("center", justify="center", foreground="gray", font=("Helvetica", 10))
+                    self.chat_display.tag_configure(
+                        "center",
+                        justify="center",
+                        foreground="gray",
+                        font=("Helvetica", 10),
+                    )
                     self.chat_display.insert(tk.END, f"{content}\n\n", "center")
                 elif username == self.username:
                     # Right-align your messages
-                    self.chat_display.tag_configure("right", justify="right", foreground="blue", font=("Helvetica", 12))
+                    self.chat_display.tag_configure(
+                        "right",
+                        justify="right",
+                        foreground="blue",
+                        font=("Helvetica", 12),
+                    )
                     self.chat_display.insert(tk.END, f"{username}:\n", "right")
                     self.chat_display.insert(tk.END, f"{content}\n\n", "right")
                 else:
                     # Left-align others' messages
-                    self.chat_display.tag_configure("left", justify="left", foreground="green", font=("Helvetica", 12))
+                    self.chat_display.tag_configure(
+                        "left",
+                        justify="left",
+                        foreground="green",
+                        font=("Helvetica", 12),
+                    )
                     self.chat_display.insert(tk.END, f"{username}:\n", "left")
                     self.chat_display.insert(tk.END, f"{content}\n\n", "left")
 
@@ -267,7 +342,7 @@ class ChatUI:
             self.root.after(0, _update)
         else:
             _update()
-            
+
     def show_peers(self):
         if not self.chat_instance:
             return
@@ -292,10 +367,12 @@ class ChatUI:
         self.root.destroy()
         sys.exit(0)
 
+
 def main():
     root = tk.Tk()
     app = ChatUI(root)
     root.mainloop()
+
 
 if __name__ == "__main__":
     main()

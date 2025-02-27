@@ -1,5 +1,6 @@
 import os
 import uuid
+import base64
 
 CHUNK_SIZE = 8192  # 8KB, adjust as needed
 
@@ -55,12 +56,25 @@ class FileTransfer:
         """
         transfer_id = message.get("transfer_id")
         filename = message.get("filename")
-        data_chunk = message.get("data", b"")
+        data_chunk = message.get("data", "")
+        # data_chunk = (
+        #     bytes.fromhex(message.get("data", ""))
+        #     if isinstance(message.get("data"), str)
+        #     else message.get("data", b"")
+        # )
+        encoded_data = message.get("data", "")
         is_last = message.get("is_last", False)
 
         if not transfer_id or not filename:
             print("[FileTransfer] Invalid file chunk message")
             return
+
+        # Decode from base64 if it's a string
+        if isinstance(data_chunk, str) and data_chunk:
+            data_chunk = base64.b64decode(data_chunk)
+
+        # # Decode Base64 data into raw bytes
+        # chunk = base64.b64decode(encoded_data)
 
         # If starting a new transfer, initialize
         if transfer_id not in self.incoming_transfers:
@@ -89,11 +103,20 @@ class FileTransfer:
         """
         Create a file chunk message and send it via message_sender.
         """
+        # Encode binary data as base64 string
+        if isinstance(chunk, bytes):
+            chunk = base64.b64encode(chunk).decode("ascii")
+        # Base64-encode the binary chunk
+        # encoded_chunk = base64.b64encode(chunk).decode("ascii")
+
         message = {
             "type": "file_chunk",
             "transfer_id": transfer_id,
             "filename": filename,
             "data": chunk,
+            # "data": (
+            #     chunk.hex() if isinstance(chunk, bytes) else chunk
+            # ),  # Convert bytes to hex string,
             "is_last": is_last_chunk,
         }
 

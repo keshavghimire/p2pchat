@@ -7,8 +7,16 @@ import random
 import threading
 from typing import Dict, Callable
 
+
 class P2PChat:
-    def __init__(self, username: str, host: str = '0.0.0.0', port: int = None, ui_callback: Callable = None):
+    def __init__(
+        self,
+        username: str,
+        host: str = "0.0.0.0",
+        port: int = None,
+        ui_callback: Callable = None,
+        file_chunk_callback: Callable = None,
+    ):
         self.username = username
         self.host = host
         self.port = port or random.randint(49152, 65535)
@@ -34,7 +42,10 @@ class P2PChat:
         self.heartbeat_thread.daemon = True
         self.heartbeat_thread.start()
 
-        self._notify_ui(f"P2P Chat started on port {self.port}\nYour username: {username}")
+        self._notify_ui(
+            f"P2P Chat started on port {self.port}\nYour username: {username}"
+        )
+        self.file_chunk_callback = file_chunk_callback
 
     def _notify_ui(self, message: str):
         if self.ui_callback:
@@ -45,8 +56,7 @@ class P2PChat:
             try:
                 client_socket, address = self.server_socket.accept()
                 client_handler = threading.Thread(
-                    target=self._handle_client,
-                    args=(client_socket, address)
+                    target=self._handle_client, args=(client_socket, address)
                 )
                 client_handler.daemon = True
                 client_handler.start()
@@ -76,53 +86,53 @@ class P2PChat:
         finally:
             client_socket.close()
 
-    def _handle_message(self, client_socket: socket.socket, address: tuple, message: dict):
-        if message['type'] == 'join':
+    def _handle_message(
+        self, client_socket: socket.socket, address: tuple, message: dict
+    ):
+        if message["type"] == "join":
             with self.lock:
-                self.peers[message['username']] = {
-                    'address': address[0],
-                    'port': message['port'],
-                    'last_seen': time.time()
+                self.peers[message["username"]] = {
+                    "address": address[0],
+                    "port": message["port"],
+                    "last_seen": time.time(),
                 }
-            send_message(client_socket, {
-                'type': 'welcome',
-                'username': self.username,
-                'port': self.port
-            })
+            send_message(
+                client_socket,
+                {"type": "welcome", "username": self.username, "port": self.port},
+            )
             self._notify_ui(f"{message['username']} joined the network.")
 
-        elif message['type'] == 'chat':
+        elif message["type"] == "chat":
             self._notify_ui(f"{message['username']}: {message['content']}")
 
-        elif message['type'] == 'heartbeat':
+        elif message["type"] == "heartbeat":
             with self.lock:
-                if message['username'] in self.peers:
-                    self.peers[message['username']]['last_seen'] = time.time()
+                if message["username"] in self.peers:
+                    self.peers[message["username"]]["last_seen"] = time.time()
 
-        elif message['type'] == 'leave':
+        elif message["type"] == "leave":
             with self.lock:
-                if message['username'] in self.peers:
-                    del self.peers[message['username']]
+                if message["username"] in self.peers:
+                    del self.peers[message["username"]]
             self._notify_ui(f"{message['username']} left the network.")
 
-        elif message['type'] == 'request_peers':
+        elif message["type"] == "request_peers":
             with self.lock:
-                peers_list = [{
-                    'username': peer,
-                    'address': info['address'],
-                    'port': info['port']
-                } for peer, info in self.peers.items()]
-            send_message(client_socket, {
-                'type': 'peer_list',
-                'peers': peers_list
-            })
+                peers_list = [
+                    {"username": peer, "address": info["address"], "port": info["port"]}
+                    for peer, info in self.peers.items()
+                ]
+            send_message(client_socket, {"type": "peer_list", "peers": peers_list})
+
+        elif message["type"] == "file_chunk":
+            # Forward the entire message to the file_chunk_callback for handling
+            if self.file_chunk_callback:
+                self.file_chunk_callback(message)
+        else:
+            self._notify_ui(f"Unknown message type: {message['type']} from {address}")
 
     def broadcast_message(self, message: str):
-        msg_data = {
-            'type': 'chat',
-            'username': self.username,
-            'content': message
-        }
+        msg_data = {"type": "chat", "username": self.username, "content": message}
 
         with self.lock:
             peers_copy = self.peers.copy()
@@ -130,7 +140,7 @@ class P2PChat:
         for peer_username, peer_info in peers_copy.items():
             try:
                 peer_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                peer_socket.connect((peer_info['address'], peer_info['port']))
+                peer_socket.connect((peer_info["address"], peer_info["port"]))
                 send_message(peer_socket, msg_data)
                 peer_socket.close()
             except Exception as e:
@@ -144,40 +154,45 @@ class P2PChat:
             peer_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             peer_socket.connect((known_host, known_port))
 
-            send_message(peer_socket, {
-                'type': 'join',
-                'username': self.username,
-                'port': self.port
-            })
+            send_message(
+                peer_socket,
+                {"type": "join", "username": self.username, "port": self.port},
+            )
 
             data = peer_socket.recv(4096)
             if data:
                 message = json.loads(data.decode())
-                if message['type'] == 'welcome':
+                if message["type"] == "welcome":
                     with self.lock:
-                        self.peers[message['username']] = {
-                            'address': known_host,
-                            'port': message['port'],
-                            'last_seen': time.time()
+                        self.peers[message["username"]] = {
+                            "address": known_host,
+                            "port": message["port"],
+                            "last_seen": time.time(),
                         }
-                    self._notify_ui(f"Successfully joined the network through {message['username']}.")
+                    self._notify_ui(
+                        f"Successfully joined the network through {message['username']}."
+                    )
 
-                    send_message(peer_socket, {'type': 'request_peers'})
+                    send_message(peer_socket, {"type": "request_peers"})
                     data = peer_socket.recv(4096)
                     if data:
                         message = json.loads(data.decode())
-                        if message['type'] == 'peer_list':
+                        if message["type"] == "peer_list":
                             with self.lock:
-                                for peer in message['peers']:
-                                    if peer['username'] != self.username:
-                                        self.peers[peer['username']] = {
-                                            'address': peer['address'],
-                                            'port': peer['port'],
-                                            'last_seen': time.time()
+                                for peer in message["peers"]:
+                                    if peer["username"] != self.username:
+                                        self.peers[peer["username"]] = {
+                                            "address": peer["address"],
+                                            "port": peer["port"],
+                                            "last_seen": time.time(),
                                         }
-                            self._notify_ui(f"Received list of existing peers: {len(message['peers'])} peers found.")
+                            self._notify_ui(
+                                f"Received list of existing peers: {len(message['peers'])} peers found."
+                            )
                 else:
-                    self._notify_ui(f"Unexpected message received during join: {message}")
+                    self._notify_ui(
+                        f"Unexpected message received during join: {message}"
+                    )
 
             peer_socket.close()
             return True
@@ -194,11 +209,10 @@ class P2PChat:
                 try:
                     peer_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     peer_socket.settimeout(5)
-                    peer_socket.connect((peer_info['address'], peer_info['port']))
-                    send_message(peer_socket, {
-                        'type': 'heartbeat',
-                        'username': self.username
-                    })
+                    peer_socket.connect((peer_info["address"], peer_info["port"]))
+                    send_message(
+                        peer_socket, {"type": "heartbeat", "username": self.username}
+                    )
                     peer_socket.close()
                 except Exception:
                     with self.lock:
@@ -217,11 +231,8 @@ class P2PChat:
         for peer_username, peer_info in peers_copy.items():
             try:
                 peer_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                peer_socket.connect((peer_info['address'], peer_info['port']))
-                send_message(peer_socket, {
-                    'type': 'leave',
-                    'username': self.username
-                })
+                peer_socket.connect((peer_info["address"], peer_info["port"]))
+                send_message(peer_socket, {"type": "leave", "username": self.username})
                 peer_socket.close()
             except Exception:
                 pass
@@ -232,6 +243,7 @@ class P2PChat:
             pass
         finally:
             self.server_socket.close()
+
 
 def send_message(sock: socket.socket, message: dict):
     try:

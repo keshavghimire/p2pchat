@@ -1,5 +1,8 @@
 # chat.py
 import sys
+import base64
+import socket
+import json
 import tkinter as tk
 from tkinter import (
     Tk,
@@ -31,6 +34,34 @@ class ChatUI:
         self.file_transfer = file_transfer.FileTransfer(
             message_sender=self._send_message_to_peer, downloads_folder="downloads"
         )
+
+    def _send_message_to_peer(self, peer_addr, message: dict):
+        """
+        Given a peer address (host, port) and a message dict,
+        connect, send the JSON, then close the socket.
+        """
+        host, port = peer_addr
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.connect((host, port))
+            sock.sendall(json.dumps(message).encode())
+            sock.close()
+        except Exception as e:
+            print(f"Error in _send_message_to_peer({peer_addr}): {e}")
+            # In _send_message_to_peer
+        print(f"Sending chunk of size {len(message.get('data', ''))} to {peer_addr}")
+
+    def select_file(self):
+        file_path = filedialog.askopenfilename()
+        if file_path:
+            self.update_chat_display(f"System: Sending file '{file_path}' ...")
+            # Option 1: Broadcast file to every known peer
+            if self.chat_instance and self.chat_instance.peers:
+                for peer_username, peer_info in self.chat_instance.peers.items():
+                    target_addr = (peer_info["address"], peer_info["port"])
+                    self.file_transfer.send_file(file_path, target_addr=target_addr)
+            else:
+                self.update_chat_display("System: No peers to send the file to.")
 
     def setup_welcome_screen(self):
         for widget in self.root.winfo_children():
@@ -183,7 +214,9 @@ class ChatUI:
             port = int(self.port_entry.get().strip())
             self.setup_chat_screen()
             self.chat_instance = P2PChat(
-                self.username, ui_callback=self.update_chat_display
+                self.username,
+                ui_callback=self.update_chat_display,
+                file_chunk_callback=self.file_transfer.handle_incoming_file_chunk,
             )
             success = self.chat_instance.join_network(host, port)
             if success:
@@ -280,11 +313,11 @@ class ChatUI:
                 self.chat_instance.broadcast_message(message)
             self.message_entry.delete(0, tk.END)
 
-    def select_file(self):
-        # Placeholder method to select a file from the local system
-        file_path = filedialog.askopenfilename()
-        if file_path:
-            print(f"Selected file: {file_path}")
+    # def select_file(self):
+    #     # Placeholder method to select a file from the local system
+    #     file_path = filedialog.askopenfilename()
+    #     if file_path:
+    #         print(f"Selected file: {file_path}")
 
     def update_chat_display(self, message):
         if not hasattr(self, "chat_display") or self.chat_display is None:

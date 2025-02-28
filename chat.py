@@ -1,4 +1,5 @@
 # chat.py
+import os
 import sys
 import base64
 import socket
@@ -19,6 +20,7 @@ import threading
 from tkinter import filedialog
 from p2p_chat import P2PChat
 import file_transfer
+from utils import send_message  # Add this import
 
 
 class ChatUI:
@@ -32,7 +34,9 @@ class ChatUI:
         self.chat_display = None
         self.setup_welcome_screen()
         self.file_transfer = file_transfer.FileTransfer(
-            message_sender=self._send_message_to_peer, downloads_folder="downloads"
+            message_sender=self._send_message_to_peer,
+            downloads_folder="downloads",
+            ui_callback=self.update_chat_display,  # Pass UI callback
         )
 
     def _send_message_to_peer(self, peer_addr, message: dict):
@@ -44,22 +48,26 @@ class ChatUI:
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.connect((host, port))
-            sock.sendall(json.dumps(message).encode())
+            # Use improved send_message function from utils
+            send_message(sock, message)
             sock.close()
+            print(f"Sent chunk of size {len(message.get('data', ''))} to {peer_addr}")
         except Exception as e:
             print(f"Error in _send_message_to_peer({peer_addr}): {e}")
-            # In _send_message_to_peer
-        print(f"Sending chunk of size {len(message.get('data', ''))} to {peer_addr}")
 
     def select_file(self):
         file_path = filedialog.askopenfilename()
         if file_path:
-            self.update_chat_display(f"System: Sending file '{file_path}' ...")
+            filename = os.path.basename(file_path)
+            self.update_chat_display(f"System: Sending file '{filename}' ...")
             # Option 1: Broadcast file to every known peer
             if self.chat_instance and self.chat_instance.peers:
                 for peer_username, peer_info in self.chat_instance.peers.items():
                     target_addr = (peer_info["address"], peer_info["port"])
                     self.file_transfer.send_file(file_path, target_addr=target_addr)
+                    self.update_chat_display(
+                        f"System: File '{filename}' sent to {peer_username}"
+                    )
             else:
                 self.update_chat_display("System: No peers to send the file to.")
 
@@ -141,7 +149,12 @@ class ChatUI:
 
         self.username = username
         self.setup_chat_screen()
-        self.chat_instance = P2PChat(username, ui_callback=self.update_chat_display)
+        # Make sure to pass the file_chunk_callback when creating the chat too
+        self.chat_instance = P2PChat(
+            username,
+            ui_callback=self.update_chat_display,
+            file_chunk_callback=self.file_transfer.handle_incoming_file_chunk,
+        )
         self.update_chat_display(f"You are connected as {self.username}.")
         self.update_chat_display(
             f"Your chat is running on port {self.chat_instance.port}."

@@ -6,6 +6,7 @@ import time
 import random
 import threading
 from typing import Dict, Callable
+from utils import send_message, receive_message  # Import the new function
 
 
 class P2PChat:
@@ -69,14 +70,9 @@ class P2PChat:
     def _handle_client(self, client_socket: socket.socket, address: tuple):
         try:
             while self.connected:
-                data = client_socket.recv(4096)
-                if not data:
-                    break
-
-                try:
-                    message = json.loads(data.decode())
-                except json.JSONDecodeError:
-                    self._notify_ui(f"Invalid JSON received from {address}")
+                # Use the new receive_message function
+                message = receive_message(client_socket)
+                if not message:
                     break
 
                 self._handle_message(client_socket, address, message)
@@ -125,6 +121,13 @@ class P2PChat:
             send_message(client_socket, {"type": "peer_list", "peers": peers_list})
 
         elif message["type"] == "file_chunk":
+            # Add sender information before forwarding to the file_chunk_callback
+            if "sender" in message and message["sender"] == "You":
+                # Replace "You" with the actual sender's username
+                message["sender"] = message.get("username", "Unknown")
+            elif "sender" not in message:
+                message["sender"] = message.get("username", "Unknown")
+
             # Forward the entire message to the file_chunk_callback for handling
             if self.file_chunk_callback:
                 self.file_chunk_callback(message)
@@ -154,45 +157,46 @@ class P2PChat:
             peer_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             peer_socket.connect((known_host, known_port))
 
+            # Send join request with our username and port
             send_message(
                 peer_socket,
                 {"type": "join", "username": self.username, "port": self.port},
             )
 
-            data = peer_socket.recv(4096)
-            if data:
-                message = json.loads(data.decode())
-                if message["type"] == "welcome":
-                    with self.lock:
-                        self.peers[message["username"]] = {
-                            "address": known_host,
-                            "port": message["port"],
-                            "last_seen": time.time(),
-                        }
-                    self._notify_ui(
-                        f"Successfully joined the network through {message['username']}."
-                    )
+            # Use the new receive_message function instead of raw socket.recv
+            message = receive_message(peer_socket)
+            if message and message.get("type") == "welcome":
+                with self.lock:
+                    self.peers[message["username"]] = {
+                        "address": known_host,
+                        "port": message["port"],
+                        "last_seen": time.time(),
+                    }
+                self._notify_ui(
+                    f"Successfully joined the network through {message['username']}."
+                )
 
-                    send_message(peer_socket, {"type": "request_peers"})
-                    data = peer_socket.recv(4096)
-                    if data:
-                        message = json.loads(data.decode())
-                        if message["type"] == "peer_list":
-                            with self.lock:
-                                for peer in message["peers"]:
-                                    if peer["username"] != self.username:
-                                        self.peers[peer["username"]] = {
-                                            "address": peer["address"],
-                                            "port": peer["port"],
-                                            "last_seen": time.time(),
-                                        }
-                            self._notify_ui(
-                                f"Received list of existing peers: {len(message['peers'])} peers found."
-                            )
-                else:
+                # Request list of peers
+                send_message(peer_socket, {"type": "request_peers"})
+
+                # Receive peer list using the new function
+                peer_list_msg = receive_message(peer_socket)
+                if peer_list_msg and peer_list_msg.get("type") == "peer_list":
+                    with self.lock:
+                        for peer in peer_list_msg["peers"]:
+                            if peer["username"] != self.username:
+                                self.peers[peer["username"]] = {
+                                    "address": peer["address"],
+                                    "port": peer["port"],
+                                    "last_seen": time.time(),
+                                }
                     self._notify_ui(
-                        f"Unexpected message received during join: {message}"
+                        f"Received list of existing peers: {len(peer_list_msg['peers'])} peers found."
                     )
+            else:
+                self._notify_ui(
+                    f"Unexpected or missing response when joining: {message}"
+                )
 
             peer_socket.close()
             return True
@@ -243,10 +247,3 @@ class P2PChat:
             pass
         finally:
             self.server_socket.close()
-
-
-def send_message(sock: socket.socket, message: dict):
-    try:
-        sock.sendall(json.dumps(message).encode())
-    except Exception as e:
-        print(f"Error sending message: {e}")

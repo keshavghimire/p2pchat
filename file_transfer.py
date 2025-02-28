@@ -1,22 +1,26 @@
 import os
 import uuid
 import base64
+import socket
+from utils import send_message  # Import from utils
 
 CHUNK_SIZE = 8192  # 8KB, adjust as needed
 
 
 class FileTransfer:
-    def __init__(self, message_sender, downloads_folder="downloads"):
+    def __init__(self, message_sender, downloads_folder="downloads", ui_callback=None):
         """
         :param message_sender: a callable or function reference that can send a dict message to a peer
                                e.g., send_message(peer_addr, message)
         :param downloads_folder: location for saving received files
+        :param ui_callback: function to call for UI notifications
         """
         self.message_sender = message_sender
         self.downloads_folder = downloads_folder
+        self.ui_callback = ui_callback
         os.makedirs(self.downloads_folder, exist_ok=True)
 
-        # Storing incoming files: transfer_id -> {"filename": str, "data": bytearray()}
+        # Storing incoming files: transfer_id -> {"filename": str, "data": bytearray(), "sender": str}
         self.incoming_transfers = {}
 
     def send_file(self, file_path, target_addr=None):
@@ -46,56 +50,55 @@ class FileTransfer:
         """
         Processes an incoming file chunk message. Saves completed files
         in self.downloads_folder.
-
-        Expected message fields:
-            - "type": "file_chunk"
-            - "transfer_id": str
-            - "filename": str
-            - "data": bytes
-            - "is_last": bool
         """
-        transfer_id = message.get("transfer_id")
-        filename = message.get("filename")
-        data_chunk = message.get("data", "")
-        # data_chunk = (
-        #     bytes.fromhex(message.get("data", ""))
-        #     if isinstance(message.get("data"), str)
-        #     else message.get("data", b"")
-        # )
-        encoded_data = message.get("data", "")
-        is_last = message.get("is_last", False)
+        try:
+            transfer_id = message.get("transfer_id")
+            filename = message.get("filename")
+            encoded_data = message.get("data", "")
+            is_last = message.get("is_last", False)
+            sender = message.get("sender", "Unknown")  # Get sender's username
 
-        if not transfer_id or not filename:
-            print("[FileTransfer] Invalid file chunk message")
-            return
+            if not transfer_id or not filename:
+                print("[FileTransfer] Invalid file chunk message")
+                return
 
-        # Decode from base64 if it's a string
-        if isinstance(data_chunk, str) and data_chunk:
-            data_chunk = base64.b64decode(data_chunk)
+            # Decode from base64 if it's a string
+            data_chunk = base64.b64decode(encoded_data) if encoded_data else b""
 
-        # # Decode Base64 data into raw bytes
-        # chunk = base64.b64decode(encoded_data)
+            # If starting a new transfer, initialize and notify UI
+            if transfer_id not in self.incoming_transfers:
+                self.incoming_transfers[transfer_id] = {
+                    "filename": filename,
+                    "data": bytearray(),
+                    "sender": sender,
+                }
 
-        # If starting a new transfer, initialize
-        if transfer_id not in self.incoming_transfers:
-            self.incoming_transfers[transfer_id] = {
-                "filename": filename,
-                "data": bytearray(),
-            }
+                # Notify UI when starting to receive a file
+                if self.ui_callback:
+                    self.ui_callback(f"Receiving file '{filename}' from {sender}...")
 
-        self.incoming_transfers[transfer_id]["data"].extend(data_chunk)
+            # Add this chunk to the file data
+            self.incoming_transfers[transfer_id]["data"].extend(data_chunk)
 
-        if is_last:
-            # Write the file to disk
-            file_data = self.incoming_transfers[transfer_id]["data"]
-            save_path = os.path.join(self.downloads_folder, filename)
+            if is_last:
+                # Write the file to disk
+                file_data = self.incoming_transfers[transfer_id]["data"]
+                save_path = os.path.join(self.downloads_folder, filename)
 
-            with open(save_path, "wb") as f:
-                f.write(file_data)
+                with open(save_path, "wb") as f:
+                    f.write(file_data)
 
-            # Clean up
-            del self.incoming_transfers[transfer_id]
-            print(f"[FileTransfer] File '{filename}' saved to {save_path}")
+                # Notify UI that file is complete
+                if self.ui_callback:
+                    self.ui_callback(
+                        f"File '{filename}' received from {sender} and saved to {save_path}"
+                    )
+
+                # Clean up
+                del self.incoming_transfers[transfer_id]
+                print(f"[FileTransfer] File '{filename}' saved to {save_path}")
+        except Exception as e:
+            print(f"[FileTransfer] Error handling file chunk: {e}")
 
     def _send_chunk(
         self, transfer_id, filename, chunk, is_last_chunk, target_addr=None
@@ -106,18 +109,14 @@ class FileTransfer:
         # Encode binary data as base64 string
         if isinstance(chunk, bytes):
             chunk = base64.b64encode(chunk).decode("ascii")
-        # Base64-encode the binary chunk
-        # encoded_chunk = base64.b64encode(chunk).decode("ascii")
 
         message = {
             "type": "file_chunk",
             "transfer_id": transfer_id,
             "filename": filename,
             "data": chunk,
-            # "data": (
-            #     chunk.hex() if isinstance(chunk, bytes) else chunk
-            # ),  # Convert bytes to hex string,
             "is_last": is_last_chunk,
+            "sender": "You",  # This will be overridden in p2p_chat.py
         }
 
         # If target_addr is specified, send directly. Otherwise, your logic could broadcast.
@@ -128,3 +127,19 @@ class FileTransfer:
             # for peer, info in self.peers.items():
             #     self.message_sender(info["addr"], message)
             pass
+
+    def _send_message_to_peer(self, peer_addr, message: dict):
+        """
+        Given a peer address (host, port) and a message dict,
+        connect, send the JSON, then close the socket.
+        """
+        host, port = peer_addr
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.connect((host, port))
+            # Use the improved send_message function from utils.py
+            send_message(sock, message)
+            sock.close()
+            print(f"Sent chunk of size {len(message.get('data', ''))} to {peer_addr}")
+        except Exception as e:
+            print(f"Error in _send_message_to_peer({peer_addr}): {e}")

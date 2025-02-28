@@ -1,16 +1,33 @@
 # utils.py
+"""
+Utility functions for network communication in the P2P chat application.
+This module provides message framing to ensure complete messages are sent and received.
+"""
 import socket
 import json
 import struct
 
 
 def send_message(sock: socket.socket, message: dict):
-    """Send a message with proper length prefix for framing"""
+    """
+    Send a message with proper length prefix for framing.
+
+    This function handles the message framing protocol:
+    1. Convert message dict to JSON
+    2. Add a 4-byte length prefix
+    3. Send the complete packet
+
+    Args:
+        sock: Socket connection to send message through
+        message: Dictionary containing the message data
+    """
     try:
         # Convert message to JSON string and encode to bytes
         data = json.dumps(message).encode()
+
         # Prefix with message length (4-byte integer in network byte order)
         length_prefix = struct.pack("!I", len(data))
+
         # Send length prefix followed by the data
         sock.sendall(length_prefix + data)
     except Exception as e:
@@ -18,7 +35,20 @@ def send_message(sock: socket.socket, message: dict):
 
 
 def receive_message(sock: socket.socket) -> dict:
-    """Receive a message with length prefix framing"""
+    """
+    Receive a message with length prefix framing.
+
+    This function handles the message framing protocol:
+    1. Read the 4-byte length prefix
+    2. Read the specified number of bytes
+    3. Parse the JSON message
+
+    Args:
+        sock: Socket connection to receive message from
+
+    Returns:
+        Parsed message dictionary or None if an error occurred
+    """
     try:
         # Set a timeout to prevent hanging forever
         sock.settimeout(10.0)  # 10 seconds timeout
@@ -35,7 +65,7 @@ def receive_message(sock: socket.socket) -> dict:
                 print(f"Incomplete length prefix received ({len(length_bytes)} bytes)")
             return None
 
-        # Unpack the length prefix
+        # Unpack the length prefix to get the message size
         message_length = struct.unpack("!I", length_bytes)[0]
 
         # Sanity check to avoid allocating too much memory
@@ -43,7 +73,7 @@ def receive_message(sock: socket.socket) -> dict:
             print(f"Message too large: {message_length} bytes")
             return None
 
-        # Read the message data
+        # Read the message data in chunks to handle large messages
         chunks = []
         bytes_received = 0
         while bytes_received < message_length:

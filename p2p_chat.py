@@ -1,4 +1,11 @@
-# p2p_chat.py
+"""
+Core P2P Chat implementation.
+
+This module provides the main functionality for peer-to-peer chat communication,
+including connecting to peers, sending/receiving messages, and maintaining 
+peer connections through heartbeats.
+"""
+
 import sys
 import socket
 import json
@@ -6,10 +13,21 @@ import time
 import random
 import threading
 from typing import Dict, Callable
-from utils import send_message, receive_message  # Import the new function
+from utils import send_message, receive_message
 
 
 class P2PChat:
+    """
+    Main P2P Chat class that handles all peer-to-peer communication.
+
+    This class is responsible for:
+    - Starting a server to accept incoming peer connections
+    - Connecting to existing peers
+    - Sending and receiving messages
+    - Maintaining peer connections with heartbeats
+    - Tracking peer status (online/offline)
+    """
+
     def __init__(
         self,
         username: str,
@@ -19,15 +37,30 @@ class P2PChat:
         file_chunk_callback: Callable = None,
         status_callback: Callable = None,
     ):
+        """
+        Initialize a new P2P Chat instance.
+
+        Args:
+            username: User's display name
+            host: Host address to bind the server socket to
+            port: Port number to use (random if not specified)
+            ui_callback: Function to call for UI notifications
+            file_chunk_callback: Function to call when file chunks are received
+            status_callback: Function to call when peer status changes
+        """
         self.username = username
         self.host = host
-        self.port = port or random.randint(49152, 65535)
-        self.peers: Dict[str, dict] = {}
+        self.port = port or random.randint(
+            49152, 65535
+        )  # Use random high port if not specified
+        self.peers: Dict[str, dict] = {}  # Stores info about connected peers
         self.connected = True
-        self.lock = threading.Lock()
+        self.lock = threading.Lock()  # Thread safety for peer list access
         self.ui_callback = ui_callback
         self.status_callback = status_callback  # Callback for status changes
+        self.file_chunk_callback = file_chunk_callback
 
+        # Set up server socket to accept incoming connections
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
@@ -37,10 +70,12 @@ class P2PChat:
             sys.exit(1)
         self.server_socket.listen(5)
 
+        # Start the server thread to accept connections
         self.server_thread = threading.Thread(target=self._listen_for_connections)
         self.server_thread.daemon = True
         self.server_thread.start()
 
+        # Start the heartbeat thread to maintain peer connections
         self.heartbeat_thread = threading.Thread(target=self._send_heartbeat)
         self.heartbeat_thread.daemon = True
         self.heartbeat_thread.start()
@@ -48,13 +83,22 @@ class P2PChat:
         self._notify_ui(
             f"P2P Chat started on port {self.port}\nYour username: {username}"
         )
-        self.file_chunk_callback = file_chunk_callback
 
     def _notify_ui(self, message: str):
+        """
+        Send a notification message to the UI if a callback is defined.
+
+        Args:
+            message: The message to display in the UI
+        """
         if self.ui_callback:
             self.ui_callback(message)
 
     def _listen_for_connections(self):
+        """
+        Listen for and accept incoming peer connections in a background thread.
+        For each connection, start a new client handler thread.
+        """
         while self.connected:
             try:
                 client_socket, address = self.server_socket.accept()
@@ -70,13 +114,21 @@ class P2PChat:
                 self._notify_ui(f"Unexpected error in _listen_for_connections: {e}")
 
     def _handle_client(self, client_socket: socket.socket, address: tuple):
+        """
+        Handle communication with a connected client in a dedicated thread.
+
+        Args:
+            client_socket: Socket connection to the client
+            address: Client's address as (ip, port) tuple
+        """
         try:
             while self.connected:
-                # Use the new receive_message function
+                # Use the receive_message function to read framed message
                 message = receive_message(client_socket)
                 if not message:
-                    break
+                    break  # Connection closed or error
 
+                # Process the received message
                 self._handle_message(client_socket, address, message)
 
         except Exception as e:
@@ -87,14 +139,26 @@ class P2PChat:
     def _handle_message(
         self, client_socket: socket.socket, address: tuple, message: dict
     ):
+        """
+        Process a message received from a peer.
+
+        Args:
+            client_socket: Socket connection to respond on if needed
+            address: Sender's address as (ip, port) tuple
+            message: The received message as a dictionary
+        """
+        # Handle different message types with specific actions
         if message["type"] == "join":
+            # New peer joining the network
             with self.lock:
                 self.peers[message["username"]] = {
                     "address": address[0],
                     "port": message["port"],
                     "last_seen": time.time(),
-                    "status": "online",  # Add status field
+                    "status": "online",  # Set initial status
                 }
+
+            # Send welcome message back
             send_message(
                 client_socket,
                 {"type": "welcome", "username": self.username, "port": self.port},
@@ -106,9 +170,11 @@ class P2PChat:
                 self.status_callback(message["username"], "online")
 
         elif message["type"] == "chat":
+            # Regular chat message
             self._notify_ui(f"{message['username']}: {message['content']}")
 
         elif message["type"] == "heartbeat":
+            # Heartbeat to keep connections alive and detect online peers
             with self.lock:
                 if message["username"] in self.peers:
                     peer_info = self.peers[message["username"]]
@@ -121,12 +187,14 @@ class P2PChat:
                         self.status_callback(message["username"], "online")
 
         elif message["type"] == "leave":
+            # Peer is leaving the network
             with self.lock:
                 if message["username"] in self.peers:
                     del self.peers[message["username"]]
             self._notify_ui(f"{message['username']} left the network.")
 
         elif message["type"] == "request_peers":
+            # Request for a list of known peers
             with self.lock:
                 peers_list = [
                     {"username": peer, "address": info["address"], "port": info["port"]}
@@ -135,25 +203,34 @@ class P2PChat:
             send_message(client_socket, {"type": "peer_list", "peers": peers_list})
 
         elif message["type"] == "file_chunk":
-            # Add sender information before forwarding to the file_chunk_callback
+            # File transfer chunk received
+            # Add sender information for the UI
             if "sender" in message and message["sender"] == "You":
                 # Replace "You" with the actual sender's username
                 message["sender"] = message.get("username", "Unknown")
             elif "sender" not in message:
                 message["sender"] = message.get("username", "Unknown")
 
-            # Forward the entire message to the file_chunk_callback for handling
+            # Forward to the file chunk handler
             if self.file_chunk_callback:
                 self.file_chunk_callback(message)
         else:
+            # Unknown message type
             self._notify_ui(f"Unknown message type: {message['type']} from {address}")
 
     def broadcast_message(self, message: str):
+        """
+        Send a chat message to all connected peers.
+
+        Args:
+            message: The text message to send
+        """
         msg_data = {"type": "chat", "username": self.username, "content": message}
 
         with self.lock:
-            peers_copy = self.peers.copy()
+            peers_copy = self.peers.copy()  # Make a copy to avoid concurrency issues
 
+        # Send to each peer
         for peer_username, peer_info in peers_copy.items():
             try:
                 peer_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -162,12 +239,24 @@ class P2PChat:
                 peer_socket.close()
             except Exception as e:
                 self._notify_ui(f"Error sending message to {peer_username}: {e}")
+                # Remove unreachable peer
                 with self.lock:
                     if peer_username in self.peers:
                         del self.peers[peer_username]
 
     def join_network(self, known_host: str, known_port: int):
+        """
+        Join an existing P2P network via a known peer.
+
+        Args:
+            known_host: IP address of known peer
+            known_port: Port number of known peer
+
+        Returns:
+            bool: True if successfully joined, False otherwise
+        """
         try:
+            # Connect to the known peer
             peer_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             peer_socket.connect((known_host, known_port))
 
@@ -177,24 +266,25 @@ class P2PChat:
                 {"type": "join", "username": self.username, "port": self.port},
             )
 
-            # Use the new receive_message function instead of raw socket.recv
+            # Receive welcome message
             message = receive_message(peer_socket)
             if message and message.get("type") == "welcome":
+                # Add the peer to our list
                 with self.lock:
                     self.peers[message["username"]] = {
                         "address": known_host,
                         "port": message["port"],
                         "last_seen": time.time(),
-                        "status": "online",  # Add status field
+                        "status": "online",
                     }
                 self._notify_ui(
                     f"Successfully joined the network through {message['username']}."
                 )
 
-                # Request list of peers
+                # Request list of other peers
                 send_message(peer_socket, {"type": "request_peers"})
 
-                # Receive peer list using the new function
+                # Receive and process peer list
                 peer_list_msg = receive_message(peer_socket)
                 if peer_list_msg and peer_list_msg.get("type") == "peer_list":
                     with self.lock:
@@ -204,7 +294,7 @@ class P2PChat:
                                     "address": peer["address"],
                                     "port": peer["port"],
                                     "last_seen": time.time(),
-                                    "status": "online",  # Add status field
+                                    "status": "online",
                                 }
                     self._notify_ui(
                         f"Received list of existing peers: {len(peer_list_msg['peers'])} peers found."
@@ -225,12 +315,21 @@ class P2PChat:
             return False
 
     def _send_heartbeat(self):
+        """
+        Periodically send heartbeats to all peers and check their status.
+
+        This background thread maintains the network by:
+        1. Sending heartbeats to peers periodically
+        2. Detecting when peers go offline
+        3. Updating status information
+        """
         while self.connected:
             current_time = time.time()
 
             with self.lock:
-                peers_copy = self.peers.copy()
+                peers_copy = self.peers.copy()  # Copy to avoid concurrent modification
 
+            # Check each peer
             for peer_username, peer_info in peers_copy.items():
                 try:
                     # Check if peer might be offline (no heartbeat for 15 seconds)
@@ -276,8 +375,13 @@ class P2PChat:
 
             time.sleep(10)  # Check every 10 seconds
 
-    # Add a method to get all online peers
     def get_online_peers(self):
+        """
+        Get dictionary of currently online peers.
+
+        Returns:
+            dict: Filtered dictionary containing only online peers
+        """
         with self.lock:
             return {
                 username: info
@@ -286,8 +390,17 @@ class P2PChat:
             }
 
     def disconnect(self):
-        self.connected = False
+        """
+        Disconnect from the network and clean up resources.
 
+        This method:
+        1. Notifies all peers that we're leaving
+        2. Stops all background threads
+        3. Closes the server socket
+        """
+        self.connected = False  # Signal threads to stop
+
+        # Notify peers that we're leaving
         with self.lock:
             peers_copy = self.peers.copy()
 
@@ -298,11 +411,12 @@ class P2PChat:
                 send_message(peer_socket, {"type": "leave", "username": self.username})
                 peer_socket.close()
             except Exception:
-                pass
+                pass  # Ignore errors on disconnect
 
+        # Close the server socket
         try:
             self.server_socket.shutdown(socket.SHUT_RDWR)
         except OSError:
-            pass
+            pass  # Socket might already be closed
         finally:
             self.server_socket.close()

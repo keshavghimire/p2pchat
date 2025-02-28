@@ -20,18 +20,7 @@ class PresenceClient:
         """Register with the presence server"""
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(5)  # Add timeout to avoid hanging
-
-            try:
-                sock.connect((self.presence_server, self.presence_port))
-            except ConnectionRefusedError:
-                print(
-                    f"Presence server not running at {self.presence_server}:{self.presence_port}"
-                )
-                print(
-                    "Start the presence server first by running start_presence_server.py"
-                )
-                return False
+            sock.connect((self.presence_server, self.presence_port))
 
             # Get the local IP address that can be used by other peers
             # This is a simple approach - in a real-world scenario you might

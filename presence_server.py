@@ -1,3 +1,10 @@
+"""
+Presence Server for the P2P Chat Application.
+
+This server tracks which users are online and allows users to discover 
+each other without needing to know IP addresses and ports in advance.
+"""
+
 import socket
 import threading
 import json
@@ -8,10 +15,21 @@ from utils import send_message, receive_message
 class PresenceServer:
     """
     A server that keeps track of online users and their connection details.
-    Users can register themselves and query for other online users.
+
+    This server allows users to:
+    - Register themselves as online
+    - Discover other online users
+    - Maintain their online status with heartbeats
     """
 
     def __init__(self, host="0.0.0.0", port=7000):
+        """
+        Initialize the presence server.
+
+        Args:
+            host: Host address to bind to (default: all interfaces)
+            port: Port to listen on (default: 7000)
+        """
         self.host = host
         self.port = port
         self.running = False
@@ -20,7 +38,14 @@ class PresenceServer:
         self.lock = threading.Lock()
 
     def start(self):
-        """Start the presence server"""
+        """
+        Start the presence server and begin accepting connections.
+
+        This method:
+        1. Binds to the specified host and port
+        2. Starts a cleanup thread to remove stale users
+        3. Accepts and processes client connections
+        """
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
@@ -56,17 +81,23 @@ class PresenceServer:
                 self.server_socket.close()
 
     def stop(self):
-        """Stop the presence server"""
+        """Stop the presence server and clean up resources."""
         self.running = False
         if self.server_socket:
             try:
                 self.server_socket.shutdown(socket.SHUT_RDWR)
                 self.server_socket.close()
             except Exception:
-                pass
+                pass  # Socket might already be closed
 
     def _handle_client(self, client_socket, address):
-        """Handle client requests"""
+        """
+        Handle a client request.
+
+        Args:
+            client_socket: Socket connected to the client
+            address: Client's address as (ip, port) tuple
+        """
         try:
             message = receive_message(client_socket)
             if not message:
@@ -74,6 +105,7 @@ class PresenceServer:
 
             msg_type = message.get("type")
 
+            # Process different request types
             if msg_type == "register":
                 self._register_user(message, client_socket)
             elif msg_type == "query":
@@ -88,11 +120,18 @@ class PresenceServer:
             client_socket.close()
 
     def _register_user(self, message, client_socket):
-        """Register a new user or update existing user"""
+        """
+        Register a new user or update existing user.
+
+        Args:
+            message: Dictionary with registration info
+            client_socket: Socket to send response on
+        """
         username = message.get("username")
         user_port = message.get("port")
         client_ip = message.get("address")
 
+        # Validate required fields
         if not username or not user_port:
             send_message(
                 client_socket,
@@ -104,6 +143,7 @@ class PresenceServer:
             )
             return
 
+        # Store user information
         with self.lock:
             self.online_users[username] = {
                 "address": client_ip,

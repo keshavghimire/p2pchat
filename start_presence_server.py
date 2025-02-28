@@ -1,3 +1,4 @@
+# start_presence_server.py
 """
 Simple script to start the presence server.
 Run this script before trying to use presence-based connections.

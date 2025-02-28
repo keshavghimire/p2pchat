@@ -1,3 +1,5 @@
+# file_transfer.py
+
 """
 File transfer functionality for P2P Chat.
 

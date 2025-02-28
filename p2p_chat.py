@@ -1,3 +1,5 @@
+# p2p_chat.py
+
 """
 Core P2P Chat implementation.
 

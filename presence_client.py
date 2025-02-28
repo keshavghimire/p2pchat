@@ -1,3 +1,5 @@
+# presence_client.py
+
 import socket
 import threading
 import time

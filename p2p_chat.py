@@ -17,6 +17,7 @@ class P2PChat:
         port: int = None,
         ui_callback: Callable = None,
         file_chunk_callback: Callable = None,
+        status_callback: Callable = None,
     ):
         self.username = username
         self.host = host
@@ -25,6 +26,7 @@ class P2PChat:
         self.connected = True
         self.lock = threading.Lock()
         self.ui_callback = ui_callback
+        self.status_callback = status_callback  # Callback for status changes
 
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -91,6 +93,7 @@ class P2PChat:
                     "address": address[0],
                     "port": message["port"],
                     "last_seen": time.time(),
+                    "status": "online",  # Add status field
                 }
             send_message(
                 client_socket,
@@ -98,13 +101,24 @@ class P2PChat:
             )
             self._notify_ui(f"{message['username']} joined the network.")
 
+            # Notify status callback of new online peer
+            if self.status_callback:
+                self.status_callback(message["username"], "online")
+
         elif message["type"] == "chat":
             self._notify_ui(f"{message['username']}: {message['content']}")
 
         elif message["type"] == "heartbeat":
             with self.lock:
                 if message["username"] in self.peers:
-                    self.peers[message["username"]]["last_seen"] = time.time()
+                    peer_info = self.peers[message["username"]]
+                    old_status = peer_info.get("status", "unknown")
+                    peer_info["last_seen"] = time.time()
+                    peer_info["status"] = "online"
+
+                    # Notify if status changed from offline to online
+                    if old_status != "online" and self.status_callback:
+                        self.status_callback(message["username"], "online")
 
         elif message["type"] == "leave":
             with self.lock:
@@ -171,6 +185,7 @@ class P2PChat:
                         "address": known_host,
                         "port": message["port"],
                         "last_seen": time.time(),
+                        "status": "online",  # Add status field
                     }
                 self._notify_ui(
                     f"Successfully joined the network through {message['username']}."
@@ -189,10 +204,15 @@ class P2PChat:
                                     "address": peer["address"],
                                     "port": peer["port"],
                                     "last_seen": time.time(),
+                                    "status": "online",  # Add status field
                                 }
                     self._notify_ui(
                         f"Received list of existing peers: {len(peer_list_msg['peers'])} peers found."
                     )
+
+                    # Notify status callback of new online peer
+                    if self.status_callback:
+                        self.status_callback(message["username"], "online")
             else:
                 self._notify_ui(
                     f"Unexpected or missing response when joining: {message}"
@@ -206,25 +226,64 @@ class P2PChat:
 
     def _send_heartbeat(self):
         while self.connected:
+            current_time = time.time()
+
             with self.lock:
                 peers_copy = self.peers.copy()
 
             for peer_username, peer_info in peers_copy.items():
                 try:
-                    peer_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    peer_socket.settimeout(5)
-                    peer_socket.connect((peer_info["address"], peer_info["port"]))
-                    send_message(
-                        peer_socket, {"type": "heartbeat", "username": self.username}
-                    )
-                    peer_socket.close()
+                    # Check if peer might be offline (no heartbeat for 15 seconds)
+                    if current_time - peer_info.get("last_seen", 0) > 15:
+                        old_status = peer_info.get("status", "unknown")
+
+                        # Try to connect
+                        peer_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        peer_socket.settimeout(5)
+                        peer_socket.connect((peer_info["address"], peer_info["port"]))
+                        send_message(
+                            peer_socket,
+                            {"type": "heartbeat", "username": self.username},
+                        )
+                        peer_socket.close()
+
+                        # Update last seen and ensure status is online
+                        with self.lock:
+                            if peer_username in self.peers:
+                                self.peers[peer_username]["last_seen"] = time.time()
+                                self.peers[peer_username]["status"] = "online"
+
+                                # Notify if status changed
+                                if old_status != "online" and self.status_callback:
+                                    self.status_callback(peer_username, "online")
+
                 except Exception:
+                    # Connection failed - mark as offline
                     with self.lock:
                         if peer_username in self.peers:
-                            del self.peers[peer_username]
-                    self._notify_ui(f"{peer_username} appears to be offline.")
+                            old_status = self.peers[peer_username].get(
+                                "status", "unknown"
+                            )
+                            self.peers[peer_username]["status"] = "offline"
 
-            time.sleep(10)
+                            # Notify UI and status callback
+                            if old_status != "offline":
+                                self._notify_ui(
+                                    f"{peer_username} appears to be offline."
+                                )
+                                if self.status_callback:
+                                    self.status_callback(peer_username, "offline")
+
+            time.sleep(10)  # Check every 10 seconds
+
+    # Add a method to get all online peers
+    def get_online_peers(self):
+        with self.lock:
+            return {
+                username: info
+                for username, info in self.peers.items()
+                if info.get("status") == "online"
+            }
 
     def disconnect(self):
         self.connected = False
